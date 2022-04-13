@@ -39,6 +39,9 @@ torch, nn = try_import_torch()
 other_OBS = "other_obs"
 other_ACTION = "other_action"
 
+# definisce l' observation space
+# action mask è un flag binario (0-1) che indica se un azione è valida
+
 AGENT_OBS_SPACE = Dict({
     "action_mask": Box(0, 1.0, (100,)),
     "observation": Tuple([Discrete(100),Discrete(100)])
@@ -78,12 +81,10 @@ from ray.rllib.utils.typing import TensorType, List, ModelConfigDict
 from ray.rllib.models.modelv2 import restore_original_dimensions
 
 
-
+# sovrascrivo classe fullyconnectednetork per poter gestire action mask
+# imposta = 0 i logit indicati dalla mask
 class modFullyConnectedNetwork(FullyConnectedNetwork):
     def forward(self, input_dict: typingDict[str, TensorType], state: List[TensorType], seq_lens: TensorType) -> (TensorType, List[TensorType]):
-
-
-
       
         original_obs = restore_original_dimensions(input_dict["obs"], self.obs_space, "[tf|torch]")
 
@@ -93,6 +94,7 @@ class modFullyConnectedNetwork(FullyConnectedNetwork):
 
         return masked_logits, state
 
+    
 class DFaaSCriticModel(TFModelV2):
     """Multi-agent model that implements a centralized value function."""
 
@@ -103,6 +105,8 @@ class DFaaSCriticModel(TFModelV2):
         # Base of the model
         self.model = modFullyConnectedNetwork(Box(-1.0, 1.0, (100,)), action_space, num_outputs, model_config, name)
         
+        #fcnn con input degli altri agenti
+        #valore shape da valutare
         obs = tf.keras.layers.Input(shape=(300, ), name="obs")
         other_obs1 = tf.keras.layers.Input(shape=(300, ), name="other_obs1")
         other_act1 = tf.keras.layers.Input(shape=(300, ), name="other_act1")
@@ -126,6 +130,7 @@ class DFaaSCriticModel(TFModelV2):
         return tf.reshape(
             self.central_vf([
                 obs, other_obs1,
+                # se si modifica shape, allineare anche qui
                 tf.one_hot(tf.cast(other_actions1, tf.int32), 300),other_obs2,
                 tf.one_hot(tf.cast(other_actions2, tf.int32), 300)
             ]), [-1])
@@ -413,9 +418,9 @@ class DFaaSEnv(MultiAgentEnv):
 
 
 
-
+        #hack per non resettare env
+        #funzionamento count/done/horizon da rivedere
         self.count = self.count +1
-
         if self.count>=2600:
             self.count = 0
 
